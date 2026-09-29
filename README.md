@@ -89,3 +89,22 @@ cd /opt/docker/telemt && docker compose pull && docker compose up -d
 ```
 
 Важно: контейнеры хранятся в `/opt/docker`, там лежат конфиги, сертификаты. Полный откат удаляет все это только после подтверждения.
+
+
+### UDP
+Для работы подписок пользователей требуется открыть 2096 порт, требуется выполнить следующие команды (разрешить порт -> пробросить порт в docker -> перезапустить контейнер -> провека работы)
+```bash
+sudo ufw allow 2096/tcp commetn 'SUB 3xui'
+```
+
+```bash
+sed -i '/8443:8443/i\      - "2096:2096"' /opt/docker/3x-ui/docker-compose.yml_back
+```
+
+```bash
+docker compose -f /opt/docker/3x-ui/docker-compose.yml up -d 3x-ui
+```
+
+```bash
+ss -tlnp | grep 2096
+```

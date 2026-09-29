@@ -496,6 +496,7 @@ echo -e "\n${BOLD}${BLUE}*** VPS SETUP SCRIPT v3.0 ***${NC}\n"
 #  Вспомогательная функция: парсим строку "0,1,3,5" в массив STAGES_TO_RUN
 parse_stage_input() {
   local input="$1"
+  local enforce_required="${2:-1}"
   local valid=()
   IFS=',' read -ra _parts <<< "$input"
   for s in "${_parts[@]}"; do
@@ -508,7 +509,11 @@ parse_stage_input() {
   done
   STAGES_TO_RUN=("${valid[@]}")
   [[ ${#STAGES_TO_RUN[@]} -eq 0 ]] && die "Не выбрано ни одного корректного этапа"
-  ensure_required_stages
+
+  if [[ "$enforce_required" == "1" ]]; then
+    ensure_required_stages
+  fi
+
   log_info "Будут выполнены этапы: ${STAGES_TO_RUN[*]}"
 }
 
@@ -521,9 +526,10 @@ if [[ "$CURRENT_STATE" != "-1" && -n "$CURRENT_STATE" ]]; then
     echo ""
     echo "Что делаем?"
     echo "  1) Перезапустить отдельные этапы"
-    echo "  2) Показать сводку (если файл еще существует)"
-    echo "  3) Выйти"
-    read -rp "Выбор [1/2/3]: " _c || _c="3"
+    echo "  2) Полный откат системы"
+    echo "  3) Показать сводку (если файл еще существует)"
+    echo "  4) Выйти"
+    read -rp "Выбор [1/2/3/4]: " _c || _c="4"
     case "$_c" in
       1)
         load_vars
@@ -533,12 +539,17 @@ if [[ "$CURRENT_STATE" != "-1" && -n "$CURRENT_STATE" ]]; then
         print_stage_list
         read -rp "Этапы: " _si
         INSTALL_MODE="selective"
-        parse_stage_input "$_si"
+        parse_stage_input "$_si" "0"
         if printf '%s\n' "${STAGES_TO_RUN[@]}" | grep -q "^1$"; then
           ask_user_password "${NEW_USER}"
         fi
         ;;
       2)
+        load_vars
+        rollback_all
+        exit 0
+        ;;
+      3)
         [[ -f "$SUMMARY_FILE" ]] && cat "$SUMMARY_FILE" || log_warn "Файл сводки не найден"
         exit 0
         ;;

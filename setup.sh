@@ -25,6 +25,7 @@ NEW_USER="" USER_PASS="" LE_EMAIL="" ROOT_DOMAIN=""
 NPM_DOMAIN="" XUI_DOMAIN="" H2_DOMAIN=""
 SERVER_IP="" SSH_PORT="3270" XUI_PORT="2053"
 H2_PASS="" TELEMT_SECRET="" TLS_DOMAIN="www.apple.com"
+FAIL2BAN_IGNORE_IPS="127.0.0.1/8 ::1"
 P_VLESS_REALITY="8443" P_VLESS_XHTTP="8448"
 P_TROJAN="8449" P_SS="8445" P_H2="8444" P_TELEMT="8446"
 
@@ -71,6 +72,7 @@ save_vars() {
     printf 'H2_PASS=%q\n'          "${H2_PASS}"
     printf 'TELEMT_SECRET=%q\n'    "${TELEMT_SECRET}"
     printf 'TLS_DOMAIN=%q\n'       "${TLS_DOMAIN}"
+    printf 'FAIL2BAN_IGNORE_IPS=%q\n' "${FAIL2BAN_IGNORE_IPS}"
     printf 'SSH_PORT=%q\n'         "${SSH_PORT}"
     printf 'XUI_PORT=%q\n'         "${XUI_PORT}"
     printf 'P_VLESS_REALITY=%q\n'  "${P_VLESS_REALITY}"
@@ -219,13 +221,40 @@ check_tls_domain() {
   return 1
 }
 
+build_port_check_regex() {
+  local -A seen=()
+  local port
+  local ports=("$@")
+  local regex=()
+
+  for port in "${ports[@]}"; do
+    [[ -z "$port" || ! "$port" =~ ^[0-9]+$ ]] && continue
+    [[ -n "${seen[$port]:-}" ]] && continue
+    seen["$port"]=1
+    regex+=("$port")
+  done
+
+  if ((${#regex[@]} > 0)); then
+    printf '%s|' "${regex[@]}" | sed 's/|$//'
+  fi
+}
+
 show_port_checks() {
   log_info "Проверка пробросов портов в UFW и Docker"
   ufw status numbered 2>/dev/null || true
   echo "*** Docker port mappings ***"
   docker ps --format 'table {{.Names}}\t{{.Ports}}' 2>/dev/null || true
   echo "*** TCP/UDP listeners ***"
-  ss -tulpn 2>/dev/null | grep -E ':(22|80|81|443|8443|8444|8445|8446|8448|8449|2053|3270)\b' || true
+
+  local port_regex
+  port_regex=$(build_port_check_regex \
+    80 81 443 "${SSH_PORT}" "${XUI_PORT}" "${P_VLESS_REALITY}" "${P_VLESS_XHTTP}" "${P_TROJAN}" "${P_SS}" "${P_H2}" "${P_TELEMT}")
+
+  if [[ -n "$port_regex" ]]; then
+    ss -tulpn 2>/dev/null | grep -E ":((${port_regex}))\\b" || true
+  else
+    ss -tulpn 2>/dev/null || true
+  fi
 }
 
 # =============================================================================
@@ -723,6 +752,10 @@ read -rp "$(echo -e "${BOLD}tls_domain для Telemt/FakeTLS (Enter = www.apple.
 TLS_DOMAIN="${_tls_input:-www.apple.com}"
 check_tls_domain "$TLS_DOMAIN" || true
 
+#  Fail2Ban ignoreip (опционально)
+read -rp "$(echo -e "${BOLD}Fail2Ban ignoreip (через пробел, Enter = 127.0.0.1/8 ::1):${NC} ")" _f2b_ignore || _f2b_ignore=""
+FAIL2BAN_IGNORE_IPS="${_f2b_ignore:-127.0.0.1/8 ::1}"
+
 #  Автогенерация секретов
 H2_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 TELEMT_SECRET=$(openssl rand -hex 16)
@@ -756,6 +789,7 @@ echo -e "${BOLD}${BLUE}Trojan       : ${GREEN}${P_TROJAN}/tcp${NC}"
 echo -e "${BOLD}${BLUE}Shadowsocks  : ${GREEN}${P_SS}/tcp+udp${NC}"
 echo -e "${BOLD}${BLUE}Hysteria2     : ${GREEN}${P_H2}/udp${NC}"
 echo -e "${BOLD}${BLUE}Telemt       : ${GREEN}${P_TELEMT}/tcp${NC}"
+echo -e "${BOLD}${BLUE}Fail2Ban ignoreip: ${GREEN}${FAIL2BAN_IGNORE_IPS}${NC}"
 echo ""
 read -rp "$(echo -e "${BOLD}${RED}Все верно? Продолжить? (yes/no):${NC} ")" _fc || _fc="no"
 [[ "$_fc" == "yes" ]] || die "Установка отменена"
@@ -924,18 +958,18 @@ ufw status verbose
 log_section "1.7 — Fail2Ban"
 cat > /etc/fail2ban/jail.local << EOF
 [DEFAULT]
-bantime  = 5h
-findtime = 2m
-maxretry = 2
-backend  = systemd
-ignoreip = 127.0.0.1/8 ::1
+bantime    = 5h
+findtime   = 2m
+maxretry   = 2
+backend    = systemd
+ignoreip  = ${FAIL2BAN_IGNORE_IPS:-127.0.0.1/8 ::1}
 
 [sshd]
-enabled = true
-port    = ${SSH_PORT}
-filter  = sshd
-logpath = /var/log/auth.log
-maxretry = 3
+enabled   = true
+port      = ${SSH_PORT}
+filter    = sshd
+logpath   = /var/log/auth.log
+maxretry  = 3
 EOF
 
 systemctl enable fail2ban > /dev/null 2>&1
@@ -1177,7 +1211,7 @@ echo -e "${YELLOW}В NPM → Add Proxy Host:${NC}"
 echo -e "  Domain Names:     ${CYAN}${ROOT_DOMAIN}${NC}  +  ${CYAN}www.${ROOT_DOMAIN}${NC}"
 echo -e "  Forward Hostname: ${GREEN}nginx-site${NC}"
 echo -e "  Forward Port:     ${GREEN}80${NC}"
-echo -e "  ✔ Websockets Support  ✔ Block Common Exploits"
+echo -e "  Websockets Support  Block Common Exploits"
 echo -e "  SSL: Let's Encrypt + Force SSL + HTTP/2"
 echo ""
 read -rp "$(echo -e "${BOLD}Настрой Proxy Host, проверь https://${ROOT_DOMAIN} → Enter:${NC} ")" _ || true
@@ -1271,7 +1305,7 @@ echo -e "${BOLD}${YELLOW}*** ДЕЙСТВИЯ В NPM — 3x-ui ***${NC}"
 echo -e "${BOLD}${YELLOW}1. Add Proxy Host:${NC}"
 echo -e "${BOLD}${YELLOW}   Domain: ${CYAN}${XUI_DOMAIN}${NC}"
 echo -e "${BOLD}${YELLOW}   Forward: ${GREEN}3x-ui : ${XUI_PORT}${NC}"
-echo -e "${BOLD}${YELLOW}   ✔ Websockets Support | SSL Let's Encrypt + Force SSL${NC}"
+echo -e "${BOLD}${YELLOW}   Websockets Support | SSL Let's Encrypt + Force SSL${NC}"
 echo -e "${BOLD}${YELLOW}2. Войди в панель: ${CYAN}https://${XUI_DOMAIN}${NC}"
 echo -e "${BOLD}${YELLOW}   Логин по умолчанию: admin / admin${NC}"
 echo -e "${BOLD}${YELLOW}3. Смени пароль (если UI не позволяет):${NC}"
@@ -1620,6 +1654,7 @@ Hysteria2 и Telemt секреты — сгенерированы автомат
     - bantime = 5h
     - findtime = 2m
     - maxretry = 3
+    - ignoreip = ${FAIL2BAN_IGNORE_IPS:-127.0.0.1/8 ::1}
     - защищает SSH от brute-force атак
   Команды:
     nano /etc/fail2ban/jail.local

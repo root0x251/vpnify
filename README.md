@@ -1,4 +1,4 @@
-# vpnify
+# Информация по настройке VPS
 
 ## Запуск скрипта на VPS
 
@@ -58,6 +58,9 @@ curl -fsSL https://raw.githubusercontent.com/root0x251/vpnify/refs/heads/main/se
 
 ```bash
 rm /root/vps-setup-summary.txt
+```
+
+```bash
 rm /root/.vps-setup-vars
 ```
 
@@ -71,8 +74,17 @@ rm /root/.vps-setup-vars
 
 ```bash
 cd /opt/docker/nginx-proxy-manager && docker compose pull && docker compose up -d
+```
+
+```bash
 cd /opt/docker/3x-ui && docker compose pull && docker compose up -d
+```
+
+```bash
 cd /opt/docker/hysteria2 && docker compose pull && docker compose up -d
+```
+
+```bash
 cd /opt/docker/telemt && docker compose pull && docker compose up -d
 ```
 

@@ -98,7 +98,7 @@ sudo ufw allow 2096/tcp commetn 'SUB 3xui'
 ```
 
 ```bash
-sed -i '/8443:8443/i\      - "2096:2096"' /opt/docker/3x-ui/docker-compose.yml_back
+sed -i '/8443:8443/i\      - "2096:2096"' /opt/docker/3x-ui/docker-compose.yml
 ```
 
 ```bash
@@ -107,4 +107,11 @@ docker compose -f /opt/docker/3x-ui/docker-compose.yml up -d 3x-ui
 
 ```bash
 ss -tlnp | grep 2096
+```
+
+### UDP2. Настройка панели 3x-ui (для смены порта\данных пользователя и тп)
+
+```bash
+# для настройки 3xui панели используй
+docker exec -it 3x-ui x-ui
 ```
